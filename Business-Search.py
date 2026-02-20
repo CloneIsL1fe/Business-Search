@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QFileDialog, QGroupBox,
 )
 
-# Major countries with high business density and website listing rates
+# Add or Delete base on preferred countries
 SEARCH_COUNTRIES = [
     "United States",
     "United Kingdom", 
@@ -56,6 +56,7 @@ SEARCH_COUNTRIES = [
     "South Korea",
 ]
 
+# Add or Delete base on your preference for sources
 BLACKLISTED_DOMAINS = {
     "reddit.com", "facebook.com", "twitter.com", "x.com",
     "instagram.com", "youtube.com", "tiktok.com", "linkedin.com",
@@ -66,6 +67,7 @@ BLACKLISTED_DOMAINS = {
     "google.com", "bing.com",
 }
 
+# Add or Delete base on road network format
 _STREET_SUFFIXES = (
     r"Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|"
     r"Lane|Ln|Way|Pl|Quay|Place|Court|Ct|Terrace|Tce|Crescent|Cres"
@@ -178,7 +180,7 @@ def maps_link(name: str, location: Optional[str] = None) -> str:
 
 class ResearchWorker(QThread):
     log      = Signal(str)       
-    finished = Signal(list, int)  # businesses, api_calls_made
+    finished = Signal(list, int)
     error    = Signal(str)      
 
     def __init__(self, api_key: str, idea: str, num: int):
@@ -187,16 +189,15 @@ class ResearchWorker(QThread):
         self.idea    = idea
         self.num     = num
         
-        # Strict filters (NEVER compromised)
+        # FILTERS
         self.MIN_RATING = 4.0
         self.MIN_REVIEWS = 50
         
-        # API call counter
+        # COUNTER
         self.api_calls_made = 0
 
     def run(self):            
         try:
-            # Strategy: Search multiple countries until we have enough results
             businesses = self._multi_country_search()
             
             if not businesses:
@@ -224,7 +225,7 @@ class ResearchWorker(QThread):
         self.log.emit(f"🌍 Starting multi-country search for '{self.idea}'...")
         self.log.emit(f"🎯 Target: {self.num} businesses (4.0★+, 50+ reviews, website)\n")
         
-        # Search countries one by one until we have enough results
+        # Iteration for search
         for country in SEARCH_COUNTRIES:
             countries_searched += 1
             
@@ -235,16 +236,14 @@ class ResearchWorker(QThread):
             all_places.extend(places)
             
             self.log.emit(f"   → Found {len(places)} new unique places")
-            
-            # Apply filters to ALL places collected so far
+
             filtered = self._apply_strict_filters(all_places, log_stats=False)
-            
-            # Check if we have enough quality results
-            if len(filtered) >= self.num * 2:  # Get 2x to have buffer
+
+            if len(filtered) >= self.num * 2:  # change no for buffer
                 self.log.emit(f"\n✅ Sufficient results found after searching {countries_searched} countries")
                 break
             
-            # Small delay to avoid rate limiting
+            # rate limiting
             import time
             time.sleep(0.3)
         
@@ -252,7 +251,6 @@ class ResearchWorker(QThread):
         self.log.emit(f"📞 API calls made: {self.api_calls_made}")
         self.log.emit("🎯 Applying strict filters...\n")
         
-        # Final filtering with stats
         return self._apply_strict_filters(all_places, log_stats=True)
     
     def _fetch_and_dedupe(self, query: str, num: int, location: str, seen_cids: set) -> List[Dict]:
@@ -261,8 +259,7 @@ class ResearchWorker(QThread):
             raw = serper_search(self.api_key, query, num=num, location=location)
             self.api_calls_made += 1  # Increment counter
             places = raw.get("places", [])
-            
-            # Deduplicate by CID
+
             new_places = []
             for place in places:
                 cid = place.get("cid", "")
@@ -287,30 +284,29 @@ class ResearchWorker(QThread):
             "passed": 0
         }
         
+        # FILTER
         for place in places:
-            # Filter 1: Website required
+            # Website required
             website = place.get("website", "")
             if not website:
                 stats["no_website"] += 1
                 continue
             
-            # Filter 2: Blacklist check
+            # Blacklist check
             if is_blacklisted(website):
                 stats["blacklisted"] += 1
                 continue
             
-            # Filter 3: Rating >= 4.0 (STRICT)
+            # Rating >= 4.0
             rating = place.get("rating", 0)
-            # Handle None rating
             if rating is None:
                 rating = 0
             if rating < self.MIN_RATING:
                 stats["low_rating"] += 1
                 continue
             
-            # Filter 4: Reviews >= 50 (STRICT)
+            # Reviews >= 50
             review_count = place.get("ratingCount", 0)
-            # Handle None review count
             if review_count is None:
                 review_count = 0
             if review_count < self.MIN_REVIEWS:
@@ -330,8 +326,7 @@ class ResearchWorker(QThread):
             self.log.emit(f"  • Rating < 4.0★: {stats['low_rating']}")
             self.log.emit(f"  • Reviews < 50: {stats['low_reviews']}")
             self.log.emit(f"  ✅ Passed all filters: {stats['passed']}\n")
-        
-        # Build result objects
+
         businesses: List[Dict] = []
         for idx, place in enumerate(filtered[:self.num], 1):
             name     = place.get("title", "")
@@ -340,8 +335,7 @@ class ResearchWorker(QThread):
             reviews  = place.get("ratingCount", 0)
             website  = place.get("website", "")  
             cid      = place.get("cid", "")
-            
-            # Handle None values
+
             if rating is None:
                 rating = 0
             if reviews is None:
@@ -365,7 +359,6 @@ class ResearchWorker(QThread):
             })
         
         return businesses
-
 
 # ═════════════════════════════════════════════════════════════════════
 # MAIN WINDOW
